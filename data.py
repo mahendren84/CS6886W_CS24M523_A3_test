@@ -18,7 +18,7 @@ def get_cifar10_dataloaders(
         mean=[0.4914, 0.4822, 0.4465],
         std=[0.2470, 0.2435, 0.2616],
     )
-
+    """
     train_transform = transforms.Compose(
         [
             transforms.RandomCrop(32, padding=4),
@@ -34,7 +34,24 @@ def get_cifar10_dataloaders(
             normalize,
         ]
     )
-
+    """
+    train_transform = transforms.Compose(
+        [
+            transforms.Resize(224),              # NEW
+            transforms.RandomCrop(224, padding=16),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            normalize,
+        ]
+    )
+    test_transform = transforms.Compose(
+        [
+            transforms.Resize(224),              # NEW
+            transforms.ToTensor(),
+            normalize,
+        ]
+    )
+    
     full_train_dataset = datasets.CIFAR10(
         root=data_dir, train=True, download=True, transform=train_transform
     )
