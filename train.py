@@ -92,26 +92,51 @@ def parse_args():
     )
     parser.add_argument("--data-dir", type=str, default="./data")
     parser.add_argument("--batch-size", type=int, default=128)
-    parser.add_argument("--epochs", type=int, default=200)
+    # More epochs for high accuracy
+    parser.add_argument("--epochs", type=int, default=300)
     parser.add_argument("--lr", type=float, default=0.1)
     parser.add_argument("--momentum", type=float, default=0.9)
     parser.add_argument("--weight-decay", type=float, default=5e-4)
-    parser.add_argument("--scheduler", type=str, default="cosine",
-                        choices=["cosine", "none"])
-    parser.add_argument("--width-mult", type=float, default=1.0)
+    parser.add_argument(
+        "--scheduler",
+        type=str,
+        default="cosine",
+        choices=["cosine", "none"],
+    )
+    # Wider network for better accuracy (still compressible later)
+    parser.add_argument("--width-mult", type=float, default=1.4)
     parser.add_argument("--dropout", type=float, default=0.2)
-    parser.add_argument("--pretrained", action="store_true")
+
+    # Pretrained handling: default True, with a flag to disable
+    parser.add_argument(
+        "--pretrained",
+        dest="pretrained",
+        action="store_true",
+        help="Use ImageNet-pretrained MobileNetV2 weights",
+    )
+    parser.add_argument(
+        "--no-pretrained",
+        dest="pretrained",
+        action="store_false",
+        help="Train MobileNetV2 from scratch",
+    )
+    parser.set_defaults(pretrained=True)
+
     parser.add_argument("--val-split", type=float, default=0.0)
     parser.add_argument("--num-workers", type=int, default=4)
-    parser.add_argument("--save-path", type=str,
-                        default="./checkpoints/mobilenetv2_cifar10_fp32.pth")
+    parser.add_argument(
+        "--save-path",
+        type=str,
+        default="./checkpoints/mobilenetv2_cifar10_fp32.pth",
+    )
     parser.add_argument("--seed", type=int, default=42)
     parser.add_argument("--cpu", action="store_true")
 
     # W&B logging
     parser.add_argument("--log-wandb", action="store_true")
-    parser.add_argument("--wandb-project", type=str,
-                        default="cs6886-assignment3")
+    parser.add_argument(
+        "--wandb-project", type=str, default="cs6886-assignment3"
+    )
     parser.add_argument("--run-name", type=str, default=None)
 
     return parser.parse_args()
@@ -138,7 +163,9 @@ def main():
         pretrained=args.pretrained,
     ).to(device)
 
-    criterion = nn.CrossEntropyLoss()
+    # Label smoothing improves generalization and helps reach >95%
+    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+
     optimizer = optim.SGD(
         model.parameters(),
         lr=args.lr,
@@ -164,6 +191,7 @@ def main():
         )
 
     best_test_acc = 0.0
+    warmup_epochs = 5  # simple linear warmup
 
     for epoch in range(1, args.epochs + 1):
         train_loss, train_acc = train_one_epoch(
@@ -181,8 +209,14 @@ def main():
             model, test_loader, criterion, device, desc="Test"
         )
 
+        # LR warmup + cosine decay
         if scheduler is not None:
-            scheduler.step()
+            if epoch <= warmup_epochs:
+                lr_scale = epoch / float(warmup_epochs)
+                for pg in optimizer.param_groups:
+                    pg["lr"] = args.lr * lr_scale
+            else:
+                scheduler.step()
 
         if test_acc > best_test_acc:
             best_test_acc = test_acc
